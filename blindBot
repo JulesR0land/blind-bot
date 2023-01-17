@@ -1,0 +1,165 @@
+#!/bin/python3
+
+from discord.ext import commands
+from asyncio import get_event_loop
+
+from blindBotUtils import check_server_id, get_voice_channel, shuffle_playlist, start_blind_test
+from blindGlobals import globals, BOT_INTENTS, help_infos
+from config import bot_api_key
+
+
+help_command = commands.DefaultHelpCommand(
+    no_category = 'Commands'
+)
+
+bot = commands.Bot(command_prefix='!', intents=BOT_INTENTS, case_insensitive=True, help_command=help_command)
+
+
+@bot.event
+async def on_ready():
+    print(f'{bot.user.name} has connected to Discord')
+
+
+@bot.command(brief=help_infos["bonjour"][0], description=help_infos["bonjour"][1])
+async def bonjour(ctx):
+    check_server_id(ctx)
+    await ctx.send("Ta gueule", tts=True)
+
+
+@bot.command(name="setPlaylist", brief=help_infos["setPlaylist"][0], description=help_infos["setPlaylist"][1])
+async def set_playlist(ctx, arg):
+    global globals
+
+    check_server_id(ctx)
+    globals[ctx.guild.id].playlist_url = arg
+
+
+@bot.command(name="setTime", brief=help_infos["setTime"][0], description=help_infos["setTime"][1])
+async def set_time(ctx, arg):
+    global globals
+
+    check_server_id(ctx)
+    try:
+        globals[ctx.guild.id].time_per_audio = int(arg)
+    except:
+        await ctx.send("Please use an integer for the time.")
+
+
+@bot.command(name="setTTS", brief=help_infos["setTTS"][0], description=help_infos["setTTS"][1])
+async def set_tts(ctx):
+    global globals
+
+    check_server_id(ctx)
+    globals[ctx.guild.id].title_tts = True
+    await ctx.send("TTS for the titles has been activated.")
+
+
+@bot.command(name="unsetTTS", brief=help_infos["unsetTTS"][0], description=help_infos["unsetTTS"][1])
+async def unset_tts(ctx):
+    global globals
+
+    check_server_id(ctx)
+    globals[ctx.guild.id].title_tts = False
+    await ctx.send("TTS for the titles has been deactivated.")
+
+
+@bot.command(brief=help_infos["parameters"][0], description=help_infos["parameters"][1])
+async def parameters(ctx):
+    check_server_id(ctx)
+    current_audio = None if globals[ctx.guild.id].current_audio == -1 else globals[ctx.guild.id].audio_queue[globals[ctx.guild.id].current_audio]
+    title_tts = "Enabled" if globals[ctx.guild.id].title_tts else "Disabled"
+
+    await ctx.send(
+        "```" +
+        "Parameters:\n"
+        f"\nPlaylist             \t{globals[ctx.guild.id].playlist_url}" +
+        f"\nCurrent audio        \t{current_audio}" +
+        f"\nTime played per audio\t{globals[ctx.guild.id].time_per_audio}" +
+        f"\nTitle TTS            \t{title_tts}"
+        "```")
+
+
+@bot.command(brief=help_infos["play"][0], description=help_infos["play"][1])
+async def play(ctx):
+    global globals
+
+    check_server_id(ctx)
+    await get_voice_channel(ctx)
+
+    shuffled_yt_list = await shuffle_playlist(ctx)
+
+    if shuffled_yt_list:
+        if globals[ctx.guild.id].channel_id.is_playing():
+            globals[ctx.guild.id].stopped = True
+            globals[ctx.guild.id].channel_id.stop()
+        globals[ctx.guild.id].play_channel = ctx.message.channel
+        globals[ctx.guild.id].current_audio = 0
+        globals[ctx.guild.id].audio_queue = shuffled_yt_list
+        main_loop = get_event_loop()
+        await start_blind_test(ctx.guild.id, main_loop)
+
+
+@bot.command(brief=help_infos["pause"][0], description=help_infos["pause"][1])
+async def pause(ctx):
+    check_server_id(ctx)
+    if globals[ctx.guild.id].channel_id:
+        if globals[ctx.guild.id].channel_id.is_playing():
+            globals[ctx.guild.id].channel_id.pause()
+        else:
+            await ctx.send("Something must be played before pausing.")
+    else:
+        await ctx.send("Can't pause nothing.")
+
+
+@bot.command(brief=help_infos["resume"][0], description=help_infos["resume"][1])
+async def resume(ctx):
+    check_server_id(ctx)
+    if globals[ctx.guild.id].channel_id:
+        if globals[ctx.guild.id].channel_id.is_paused():
+            globals[ctx.guild.id].channel_id.resume()
+        else:
+            await ctx.send("Better to pause before resume, are you retarded ?")
+    else:
+        await ctx.send("Can't resume nothing.")
+
+
+@bot.command(brief=help_infos["skip"][0], description=help_infos["skip"][1])
+async def skip(ctx):
+    check_server_id(ctx)
+    if globals[ctx.guild.id].channel_id:
+        if globals[ctx.guild.id].channel_id.is_playing():
+            globals[ctx.guild.id].channel_id.stop()
+        else:
+            await ctx.send("Something must be played before beiing skiped.")
+    else:
+        await ctx.send("Can't skip nothing.")
+
+
+@bot.command(brief=help_infos["stop"][0], description=help_infos["stop"][1])
+async def stop(ctx):
+    global globals
+
+    check_server_id(ctx)
+    if globals[ctx.guild.id].channel_id:
+        if globals[ctx.guild.id].channel_id.is_playing():
+            globals[ctx.guild.id].stopped = True
+            globals[ctx.guild.id].current_audio = -1
+            globals[ctx.guild.id].channel_id.stop()
+        else:
+            await ctx.send("Something must be played before beiing stopped.")
+    else:
+        await ctx.send("Can't stop nothing.")
+
+
+@bot.command(brief=help_infos["leave"][0], description=help_infos["leave"][1])
+async def leave(ctx):
+    await ctx.voice_client.disconnect()
+
+
+
+def main():
+    bot.run(bot_api_key)
+
+
+if __name__ == "__main__":
+    main()
